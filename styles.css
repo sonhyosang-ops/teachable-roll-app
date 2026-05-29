@@ -55,6 +55,10 @@ body {
 .camera-mount canvas,
 .camera-mount video {
   object-fit: cover;
+}
+
+.camera-mount.is-front canvas,
+.camera-mount.is-front video {
   transform: scaleX(-1);
 }
 
@@ -64,6 +68,9 @@ body {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+.camera-mount.is-front + .pose-canvas {
   transform: scaleX(-1);
 }
 
@@ -119,7 +126,37 @@ body {
   font-size: 16px;
 }
 
-.start-button {
+.camera-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.select-label {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.camera-select {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.start-button,
+.measure-button {
   width: 100%;
   min-height: 58px;
   border: 0;
@@ -131,7 +168,16 @@ body {
   font-weight: 800;
 }
 
-.start-button:disabled {
+.measure-button {
+  background: #26364f;
+}
+
+.measure-button.is-measuring {
+  background: #b42318;
+}
+
+.start-button:disabled,
+.measure-button:disabled {
   cursor: progress;
   opacity: 0.68;
 }
@@ -213,6 +259,10 @@ body {
 }
 
 @media (max-width: 640px) {
+  .button-row {
+    grid-template-columns: 1fr;
+  }
+
   .result-row {
     grid-template-columns: 1fr 78px;
   }

@@ -26,11 +26,22 @@
           <p id="statusText">모델을 불러올 준비가 되었습니다.</p>
         </header>
 
-        <button id="startButton" class="start-button" type="button">시작</button>
+        <div class="camera-controls">
+          <label class="select-label" for="cameraSelect">카메라</label>
+          <select id="cameraSelect" class="camera-select">
+            <option value="environment">후면 카메라</option>
+            <option value="user">전면 카메라</option>
+          </select>
+        </div>
+
+        <div class="button-row">
+          <button id="cameraButton" class="start-button" type="button">카메라 시작</button>
+          <button id="measureButton" class="measure-button" type="button" disabled>측정 시작</button>
+        </div>
         <div id="resultList" class="result-list" aria-live="polite"></div>
       </section>
     </main>
 
-    <script src="./app.js?v=2"></script>
+    <script src="./app.js?v=3"></script>
   </body>
 </html>

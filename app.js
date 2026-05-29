@@ -8,40 +8,57 @@ const FALLBACK_LABELS = [
   "발모아구르기 종료",
 ];
 
-const startButton = document.querySelector("#startButton");
+const cameraButton = document.querySelector("#cameraButton");
+const measureButton = document.querySelector("#measureButton");
+const cameraSelect = document.querySelector("#cameraSelect");
 const statusText = document.querySelector("#statusText");
 const resultList = document.querySelector("#resultList");
 const cameraMount = document.querySelector("#cameraMount");
 const poseCanvas = document.querySelector("#poseCanvas");
 const poseContext = poseCanvas.getContext("2d");
+const analysisCanvas = document.createElement("canvas");
+const analysisContext = analysisCanvas.getContext("2d", { willReadFrequently: true });
 
 let model;
 let videoElement;
 let mediaStream;
 let labels = FALLBACK_LABELS;
-let isRunning = false;
+let isCameraReady = false;
+let isMeasuring = false;
+let rafId = null;
 
 renderRows(labels);
 
-startButton.addEventListener("click", async () => {
-  if (isRunning) return;
+cameraButton.addEventListener("click", async () => {
+  if (isCameraReady) return;
 
-  startButton.disabled = true;
-  startButton.textContent = "준비 중";
+  cameraButton.disabled = true;
+  cameraButton.textContent = "준비 중";
   statusText.textContent = "모델과 카메라를 준비하고 있습니다.";
 
   try {
     assertCameraCanStart();
     await init();
-    isRunning = true;
-    startButton.textContent = "인식 중";
-    statusText.textContent = "카메라 앞에서 동작을 수행하세요.";
-    window.requestAnimationFrame(loop);
+    isCameraReady = true;
+    cameraButton.textContent = "카메라 실행 중";
+    cameraSelect.disabled = true;
+    measureButton.disabled = false;
+    statusText.textContent = "카메라가 켜졌습니다. 측정 시작을 누르면 판정을 시작합니다.";
   } catch (error) {
     console.error(error);
-    startButton.disabled = false;
-    startButton.textContent = "다시 시작";
+    cameraButton.disabled = false;
+    cameraButton.textContent = "카메라 다시 시작";
     statusText.textContent = getCameraErrorMessage(error);
+  }
+});
+
+measureButton.addEventListener("click", () => {
+  if (!isCameraReady) return;
+
+  if (isMeasuring) {
+    stopMeasurement();
+  } else {
+    startMeasurement();
   }
 });
 
@@ -55,32 +72,54 @@ async function init() {
   model = await tmPose.load(modelURL, metadataURL);
 
   videoElement = await setupCamera();
-
   cameraMount.innerHTML = "";
   cameraMount.appendChild(videoElement);
   resizePoseCanvas();
 }
 
 async function loop() {
-  if (!isRunning) return;
+  if (!isMeasuring) return;
 
   try {
     await predict();
   } catch (error) {
     console.error(error);
-    statusText.textContent = "영상은 표시 중이지만 동작 분석 중 오류가 발생했습니다.";
-  } finally {
-    window.requestAnimationFrame(loop);
+    stopMeasurement();
+    statusText.textContent = "동작 분석 중 오류가 발생했습니다. 카메라 영상은 유지됩니다.";
+    return;
   }
+
+  rafId = window.requestAnimationFrame(loop);
 }
 
 async function predict() {
   if (!videoElement || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
-  const { pose, posenetOutput } = await model.estimatePose(videoElement);
+  drawVideoFrameForAnalysis();
+  const { pose, posenetOutput } = await model.estimatePose(analysisCanvas);
   const prediction = await model.predict(posenetOutput);
   updateRows(prediction);
   drawPose(pose);
+}
+
+function startMeasurement() {
+  isMeasuring = true;
+  measureButton.textContent = "측정 중지";
+  measureButton.classList.add("is-measuring");
+  statusText.textContent = "측정 중입니다. 동작을 수행하세요.";
+  rafId = window.requestAnimationFrame(loop);
+}
+
+function stopMeasurement() {
+  isMeasuring = false;
+  measureButton.textContent = "측정 시작";
+  measureButton.classList.remove("is-measuring");
+  statusText.textContent = "측정을 중지했습니다. 마지막 결과를 고정해 표시합니다.";
+
+  if (rafId) {
+    window.cancelAnimationFrame(rafId);
+    rafId = null;
+  }
 }
 
 function updateRows(predictions) {
@@ -142,6 +181,18 @@ function drawPose(pose) {
   tmPose.drawSkeleton(pose.keypoints, minPartConfidence, poseContext);
 }
 
+function drawVideoFrameForAnalysis() {
+  const width = videoElement.videoWidth || 320;
+  const height = videoElement.videoHeight || 240;
+
+  if (analysisCanvas.width !== width || analysisCanvas.height !== height) {
+    analysisCanvas.width = width;
+    analysisCanvas.height = height;
+  }
+
+  analysisContext.drawImage(videoElement, 0, 0, width, height);
+}
+
 function resizePoseCanvas() {
   const rect = cameraMount.getBoundingClientRect();
   const width = Math.max(1, Math.round(rect.width));
@@ -167,10 +218,12 @@ async function setupCamera() {
   }
 
   const { width, height } = getCameraSize();
+  const facingMode = cameraSelect.value || "environment";
+  cameraMount.classList.toggle("is-front", facingMode === "user");
   mediaStream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: {
-      facingMode: "user",
+      facingMode: { ideal: facingMode },
       width: { ideal: width },
       height: { ideal: height },
     },
