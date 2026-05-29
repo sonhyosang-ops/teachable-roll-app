@@ -26,6 +26,7 @@ let labels = FALLBACK_LABELS;
 let isCameraReady = false;
 let isMeasuring = false;
 let rafId = null;
+let analysisErrorCount = 0;
 
 renderRows(labels);
 
@@ -84,20 +85,34 @@ async function loop() {
     await predict();
   } catch (error) {
     console.error(error);
-    stopMeasurement();
-    statusText.textContent = "동작 분석 중 오류가 발생했습니다. 카메라 영상은 유지됩니다.";
-    return;
+    analysisErrorCount += 1;
+
+    if (analysisErrorCount >= 20) {
+      stopMeasurement();
+      statusText.textContent = `동작 분석을 계속할 수 없습니다: ${getAnalysisErrorMessage(error)}`;
+      return;
+    }
   }
 
   rafId = window.requestAnimationFrame(loop);
 }
 
 async function predict() {
-  if (!videoElement || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+  if (
+    !videoElement ||
+    videoElement.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA ||
+    videoElement.videoWidth === 0 ||
+    videoElement.videoHeight === 0
+  ) {
+    return;
+  }
 
   drawVideoFrameForAnalysis();
   const { pose, posenetOutput } = await model.estimatePose(analysisCanvas);
+  if (!posenetOutput) return;
+
   const prediction = await model.predict(posenetOutput);
+  analysisErrorCount = 0;
   updateRows(prediction);
   drawPose(pose);
 }
@@ -236,7 +251,30 @@ async function setupCamera() {
   video.srcObject = mediaStream;
 
   await video.play();
+  await waitForVideoReady(video);
   return video;
+}
+
+function waitForVideoReady(video) {
+  if (video.videoWidth > 0 && video.videoHeight > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error("VIDEO_READY_TIMEOUT")), 7000);
+
+    const checkReady = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        window.clearTimeout(timeoutId);
+        resolve();
+      }
+    };
+
+    video.addEventListener("loadedmetadata", checkReady, { once: true });
+    video.addEventListener("loadeddata", checkReady, { once: true });
+    video.addEventListener("canplay", checkReady, { once: true });
+    checkReady();
+  });
 }
 
 function assertCameraCanStart() {
@@ -273,6 +311,20 @@ function getCameraErrorMessage(error) {
   }
 
   return "카메라를 시작하지 못했습니다. 브라우저 권한과 HTTPS 접속을 확인하세요.";
+}
+
+function getAnalysisErrorMessage(error) {
+  const name = error?.name || error?.message || "알 수 없는 오류";
+
+  if (name === "VIDEO_READY_TIMEOUT") {
+    return "카메라 영상 정보를 읽지 못했습니다. 새로고침 후 다시 시도하세요.";
+  }
+
+  if (String(name).includes("WebGL")) {
+    return "브라우저의 WebGL 가속 문제일 수 있습니다. Chrome 또는 Safari를 다시 실행하세요.";
+  }
+
+  return name;
 }
 
 function cssEscape(value) {
