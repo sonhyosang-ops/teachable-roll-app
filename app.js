@@ -30,6 +30,7 @@ startButton.addEventListener("click", async () => {
   statusText.textContent = "모델과 카메라를 준비하고 있습니다.";
 
   try {
+    assertCameraCanStart();
     await init();
     isRunning = true;
     startButton.textContent = "인식 중";
@@ -39,7 +40,7 @@ startButton.addEventListener("click", async () => {
     console.error(error);
     startButton.disabled = false;
     startButton.textContent = "다시 시작";
-    statusText.textContent = "카메라 권한 또는 모델 불러오기를 확인하세요.";
+    statusText.textContent = getCameraErrorMessage(error);
   }
 });
 
@@ -54,7 +55,7 @@ async function init() {
 
   const { width, height } = getCameraSize();
   webcam = new tmPose.Webcam(width, height, false);
-  await webcam.setup({ facingMode: "user" });
+  await webcam.setup();
   await webcam.play();
 
   cameraMount.innerHTML = "";
@@ -153,6 +154,42 @@ function getCameraSize() {
     width: Math.max(320, Math.round(rect.width)),
     height: Math.max(240, Math.round(rect.height)),
   };
+}
+
+function assertCameraCanStart() {
+  if (!window.isSecureContext) {
+    throw new Error("INSECURE_CONTEXT");
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("CAMERA_UNSUPPORTED");
+  }
+}
+
+function getCameraErrorMessage(error) {
+  const name = error?.name || error?.message;
+
+  if (name === "INSECURE_CONTEXT") {
+    return "HTTPS 주소에서만 카메라를 사용할 수 있습니다. GitHub Pages 주소로 접속하세요.";
+  }
+
+  if (name === "CAMERA_UNSUPPORTED") {
+    return "이 브라우저에서는 카메라 API를 지원하지 않습니다. Chrome 또는 Safari로 접속하세요.";
+  }
+
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return "카메라 권한이 차단되었습니다. 브라우저 주소창의 사이트 설정에서 카메라를 허용하세요.";
+  }
+
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "사용 가능한 카메라를 찾지 못했습니다. 기기의 카메라 사용 가능 상태를 확인하세요.";
+  }
+
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "다른 앱이 카메라를 사용 중일 수 있습니다. 카메라 앱이나 화상회의 앱을 종료하세요.";
+  }
+
+  return "카메라를 시작하지 못했습니다. 브라우저 권한과 HTTPS 접속을 확인하세요.";
 }
 
 function cssEscape(value) {
