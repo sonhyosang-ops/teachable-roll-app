@@ -16,8 +16,6 @@ const resultList = document.querySelector("#resultList");
 const cameraMount = document.querySelector("#cameraMount");
 const poseCanvas = document.querySelector("#poseCanvas");
 const poseContext = poseCanvas.getContext("2d");
-const analysisCanvas = document.createElement("canvas");
-const analysisContext = analysisCanvas.getContext("2d", { willReadFrequently: true });
 
 let model;
 let videoElement;
@@ -64,6 +62,14 @@ measureButton.addEventListener("click", () => {
 });
 
 async function init() {
+  try {
+    await tf.setBackend("webgl");
+  } catch (e) {
+    console.warn("WebGL backend unavailable, falling back to CPU.", e);
+    await tf.setBackend("cpu");
+  }
+  await tf.ready();
+
   const modelURL = `${MODEL_BASE_URL}model.json`;
   const metadataURL = `${MODEL_BASE_URL}metadata.json`;
   const metadata = await fetch(metadataURL).then((response) => response.json());
@@ -107,8 +113,7 @@ async function predict() {
     return;
   }
 
-  drawVideoFrameForAnalysis();
-  const { pose, posenetOutput } = await model.estimatePose(analysisCanvas);
+  const { pose, posenetOutput } = await model.estimatePose(videoElement);
   if (!posenetOutput) return;
 
   const prediction = await model.predict(posenetOutput);
@@ -194,18 +199,6 @@ function drawPose(pose) {
   const minPartConfidence = 0.5;
   tmPose.drawKeypoints(pose.keypoints, minPartConfidence, poseContext);
   tmPose.drawSkeleton(pose.keypoints, minPartConfidence, poseContext);
-}
-
-function drawVideoFrameForAnalysis() {
-  const width = videoElement.videoWidth || 320;
-  const height = videoElement.videoHeight || 240;
-
-  if (analysisCanvas.width !== width || analysisCanvas.height !== height) {
-    analysisCanvas.width = width;
-    analysisCanvas.height = height;
-  }
-
-  analysisContext.drawImage(videoElement, 0, 0, width, height);
 }
 
 function resizePoseCanvas() {
@@ -314,17 +307,22 @@ function getCameraErrorMessage(error) {
 }
 
 function getAnalysisErrorMessage(error) {
-  const name = error?.name || error?.message || "알 수 없는 오류";
+  const name = error?.name || "";
+  const message = error?.message || "알 수 없는 오류";
 
-  if (name === "VIDEO_READY_TIMEOUT") {
+  if (name === "VIDEO_READY_TIMEOUT" || message === "VIDEO_READY_TIMEOUT") {
     return "카메라 영상 정보를 읽지 못했습니다. 새로고침 후 다시 시도하세요.";
   }
 
-  if (String(name).includes("WebGL")) {
+  if (message.includes("fromPixels")) {
+    return "이미지 처리 함수(tf.browser.fromPixels)를 사용할 수 없습니다. 브라우저를 최신 버전으로 업데이트하거나 Chrome으로 접속해 보세요.";
+  }
+
+  if (message.includes("WebGL") || name.includes("WebGL")) {
     return "브라우저의 WebGL 가속 문제일 수 있습니다. Chrome 또는 Safari를 다시 실행하세요.";
   }
 
-  return name;
+  return `${name ? name + ": " : ""}${message}`;
 }
 
 function cssEscape(value) {
