@@ -62,14 +62,6 @@ measureButton.addEventListener("click", () => {
 });
 
 async function init() {
-  try {
-    await tf.setBackend("webgl");
-  } catch (e) {
-    console.warn("WebGL backend unavailable, falling back to CPU.", e);
-    await tf.setBackend("cpu");
-  }
-  await tf.ready();
-
   const modelURL = `${MODEL_BASE_URL}model.json`;
   const metadataURL = `${MODEL_BASE_URL}metadata.json`;
   const metadata = await fetch(metadataURL).then((response) => response.json());
