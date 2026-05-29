@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>발모아구르기 동작 인식</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8.6/dist/teachablemachine-pose.min.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="camera-pane" aria-label="카메라 화면">
+        <div id="cameraMount" class="camera-mount">
+          <div class="camera-placeholder">
+            <strong>카메라 대기 중</strong>
+            <span>시작 버튼을 누르면 카메라가 켜집니다.</span>
+          </div>
+        </div>
+        <canvas id="poseCanvas" class="pose-canvas"></canvas>
+      </section>
+
+      <section class="control-pane" aria-label="동작 정확도">
+        <header class="panel-header">
+          <h1>발모아구르기 동작 인식</h1>
+          <p id="statusText">모델을 불러올 준비가 되었습니다.</p>
+        </header>
+
+        <button id="startButton" class="start-button" type="button">시작</button>
+        <div id="resultList" class="result-list" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
