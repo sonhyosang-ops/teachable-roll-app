@@ -1,5 +1,8 @@
 const MODEL_BASE_URL = "https://teachablemachine.withgoogle.com/models/LxVJHksKP/";
 const PASS_THRESHOLD = 0.6;
+const POSENET_INPUT_RESOLUTION = 257;
+const POSENET_OUTPUT_STRIDE = 16;
+const POSENET_MULTIPLIER = 0.75;
 const FALLBACK_LABELS = [
   "발모아구르기 준비",
   "발모아구르기 연속동작 1",
@@ -17,7 +20,8 @@ const cameraMount = document.querySelector("#cameraMount");
 const poseCanvas = document.querySelector("#poseCanvas");
 const poseContext = poseCanvas.getContext("2d");
 
-let model;
+let posenetModel;
+let classifier;
 let videoElement;
 let mediaStream;
 let labels = FALLBACK_LABELS;
@@ -25,6 +29,7 @@ let isCameraReady = false;
 let isMeasuring = false;
 let rafId = null;
 let analysisErrorCount = 0;
+let lastRawOutputs = null;
 
 renderRows(labels);
 
@@ -62,18 +67,57 @@ measureButton.addEventListener("click", () => {
 });
 
 async function init() {
+  try {
+    await tf.setBackend("webgl");
+  } catch (e) {
+    console.warn("WebGL backend unavailable, falling back to CPU.", e);
+    await tf.setBackend("cpu");
+  }
+  await tf.ready();
+
   const modelURL = `${MODEL_BASE_URL}model.json`;
   const metadataURL = `${MODEL_BASE_URL}metadata.json`;
   const metadata = await fetch(metadataURL).then((response) => response.json());
-
   labels = Array.isArray(metadata.labels) && metadata.labels.length > 0 ? metadata.labels : FALLBACK_LABELS;
   renderRows(labels);
-  model = await tmPose.load(modelURL, metadataURL);
+
+  posenetModel = await posenet.load({
+    architecture: "MobileNetV1",
+    outputStride: POSENET_OUTPUT_STRIDE,
+    inputResolution: { width: POSENET_INPUT_RESOLUTION, height: POSENET_INPUT_RESOLUTION },
+    multiplier: POSENET_MULTIPLIER,
+  });
+
+  hookBaseModelPredict(posenetModel);
+
+  classifier = await tf.loadLayersModel(modelURL);
 
   videoElement = await setupCamera();
   cameraMount.innerHTML = "";
   cameraMount.appendChild(videoElement);
   resizePoseCanvas();
+}
+
+function hookBaseModelPredict(model) {
+  const baseModel = model.baseModel;
+  const original = baseModel.predict.bind(baseModel);
+  baseModel.predict = (input) => {
+    const result = original(input);
+    disposeRawOutputs();
+    lastRawOutputs = {
+      heatmapScores: result.heatmapScores.clone(),
+      offsets: result.offsets.clone(),
+    };
+    return result;
+  };
+}
+
+function disposeRawOutputs() {
+  if (lastRawOutputs) {
+    lastRawOutputs.heatmapScores.dispose();
+    lastRawOutputs.offsets.dispose();
+    lastRawOutputs = null;
+  }
 }
 
 async function loop() {
@@ -105,12 +149,26 @@ async function predict() {
     return;
   }
 
-  const { pose, posenetOutput } = await model.estimatePose(videoElement);
-  if (!posenetOutput) return;
+  const pose = await posenetModel.estimateSinglePose(videoElement, { flipHorizontal: false });
+  if (!lastRawOutputs) return;
 
-  const prediction = await model.predict(posenetOutput);
+  const features = tf.tidy(() =>
+    tf.concat([lastRawOutputs.heatmapScores.flatten(), lastRawOutputs.offsets.flatten()]).expandDims(0)
+  );
+
+  const predTensor = classifier.predict(features);
+  const probs = await predTensor.data();
+  features.dispose();
+  predTensor.dispose();
+  disposeRawOutputs();
+
+  const predictions = labels.map((label, i) => ({
+    className: label,
+    probability: probs[i] ?? 0,
+  }));
+
   analysisErrorCount = 0;
-  updateRows(prediction);
+  updateRows(predictions);
   drawPose(pose);
 }
 
@@ -186,11 +244,29 @@ function drawPose(pose) {
   resizePoseCanvas();
   poseContext.clearRect(0, 0, poseCanvas.width, poseCanvas.height);
 
-  if (!pose) return;
+  if (!pose || !videoElement) return;
 
-  const minPartConfidence = 0.5;
-  tmPose.drawKeypoints(pose.keypoints, minPartConfidence, poseContext);
-  tmPose.drawSkeleton(pose.keypoints, minPartConfidence, poseContext);
+  const minConfidence = 0.5;
+  const sx = poseCanvas.width / videoElement.videoWidth;
+  const sy = poseCanvas.height / videoElement.videoHeight;
+
+  pose.keypoints.forEach((kp) => {
+    if (kp.score < minConfidence) return;
+    poseContext.beginPath();
+    poseContext.arc(kp.position.x * sx, kp.position.y * sy, 4, 0, 2 * Math.PI);
+    poseContext.fillStyle = "aqua";
+    poseContext.fill();
+  });
+
+  const adjacent = posenet.getAdjacentKeyPoints(pose.keypoints, minConfidence);
+  adjacent.forEach(([a, b]) => {
+    poseContext.beginPath();
+    poseContext.moveTo(a.position.x * sx, a.position.y * sy);
+    poseContext.lineTo(b.position.x * sx, b.position.y * sy);
+    poseContext.lineWidth = 2;
+    poseContext.strokeStyle = "aqua";
+    poseContext.stroke();
+  });
 }
 
 function resizePoseCanvas() {
@@ -306,12 +382,8 @@ function getAnalysisErrorMessage(error) {
     return "카메라 영상 정보를 읽지 못했습니다. 새로고침 후 다시 시도하세요.";
   }
 
-  if (message.includes("fromPixels")) {
-    return "이 브라우저에서 동작 분석 라이브러리(@teachablemachine/pose)가 호환되지 않습니다. Chrome 또는 Edge 최신 버전으로 접속해 보세요.";
-  }
-
   if (message.includes("WebGL") || name.includes("WebGL")) {
-    return "브라우저의 WebGL 가속 문제일 수 있습니다. Chrome 또는 Safari를 다시 실행하세요.";
+    return "브라우저의 WebGL 가속 문제일 수 있습니다. 브라우저를 다시 실행하세요.";
   }
 
   return `${name ? name + ": " : ""}${message}`;
