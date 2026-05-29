@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>발모아구르기 동작 인식</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      // Safari 17+ OffscreenCanvas 2D context returns a context whose drawImage
+      // path makes the bundled tfjs inside @teachablemachine/pose lose its
+      // fromPixels registration. Hide OffscreenCanvas so the library falls back
+      // to a standard <canvas>, which Safari handles correctly.
+      if (typeof OffscreenCanvas !== "undefined") {
+        try { delete window.OffscreenCanvas; } catch (_) {}
+        if (typeof OffscreenCanvas !== "undefined") {
+          window.OffscreenCanvas = undefined;
+        }
+      }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8.6/dist/teachablemachine-pose.min.js"></script>
   </head>
@@ -42,6 +54,6 @@
       </section>
     </main>
 
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=6"></script>
   </body>
 </html>

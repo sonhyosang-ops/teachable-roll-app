@@ -315,7 +315,7 @@ function getAnalysisErrorMessage(error) {
   }
 
   if (message.includes("fromPixels")) {
-    return "이미지 처리 함수(tf.browser.fromPixels)를 사용할 수 없습니다. 브라우저를 최신 버전으로 업데이트하거나 Chrome으로 접속해 보세요.";
+    return "이 브라우저에서 동작 분석 라이브러리(@teachablemachine/pose)가 호환되지 않습니다. Chrome 또는 Edge 최신 버전으로 접속해 보세요.";
   }
 
   if (message.includes("WebGL") || name.includes("WebGL")) {
