@@ -16,7 +16,8 @@ const poseCanvas = document.querySelector("#poseCanvas");
 const poseContext = poseCanvas.getContext("2d");
 
 let model;
-let webcam;
+let videoElement;
+let mediaStream;
 let labels = FALLBACK_LABELS;
 let isRunning = false;
 
@@ -53,26 +54,30 @@ async function init() {
   renderRows(labels);
   model = await tmPose.load(modelURL, metadataURL);
 
-  const { width, height } = getCameraSize();
-  webcam = new tmPose.Webcam(width, height, false);
-  await webcam.setup();
-  await webcam.play();
+  videoElement = await setupCamera();
 
   cameraMount.innerHTML = "";
-  cameraMount.appendChild(webcam.canvas);
+  cameraMount.appendChild(videoElement);
   resizePoseCanvas();
 }
 
 async function loop() {
   if (!isRunning) return;
 
-  webcam.update();
-  await predict();
-  window.requestAnimationFrame(loop);
+  try {
+    await predict();
+  } catch (error) {
+    console.error(error);
+    statusText.textContent = "영상은 표시 중이지만 동작 분석 중 오류가 발생했습니다.";
+  } finally {
+    window.requestAnimationFrame(loop);
+  }
 }
 
 async function predict() {
-  const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+  if (!videoElement || videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+  const { pose, posenetOutput } = await model.estimatePose(videoElement);
   const prediction = await model.predict(posenetOutput);
   updateRows(prediction);
   drawPose(pose);
@@ -154,6 +159,31 @@ function getCameraSize() {
     width: Math.max(320, Math.round(rect.width)),
     height: Math.max(240, Math.round(rect.height)),
   };
+}
+
+async function setupCamera() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach((track) => track.stop());
+  }
+
+  const { width, height } = getCameraSize();
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      facingMode: "user",
+      width: { ideal: width },
+      height: { ideal: height },
+    },
+  });
+
+  const video = document.createElement("video");
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = mediaStream;
+
+  await video.play();
+  return video;
 }
 
 function assertCameraCanStart() {
